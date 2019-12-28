@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+
+    <title>Choropleth experiments</title>
+
+    <meta name="HandheldFriendly" content="True" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.4.0/dist/leaflet.css"
+    />
+
+    <!-- Make sure you put this AFTER Leaflet's CSS -->
+    <script src="https://unpkg.com/leaflet@1.4.0/dist/leaflet.js"></script>
+    <script
+      type="text/javascript"
+      src="https://s3.amazonaws.com/words.lost.extra/firedata2.js"
+    ></script>
+    <script
+      type="text/javascript"
+      src="https://s3.amazonaws.com/words.lost.extra/fireincdata2.js"
+    ></script>
+
+    <style>
+      #map {
+        width: 600px;
+        height: 600px;
+      }
+
+      .info {
+        width: 260px;
+        padding: 6px 8px;
+        font: 14px/16px Arial, Helvetica, sans-serif;
+        background: #fff;
+        background: rgba(255, 255, 255, 0.8);
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        border-radius: 5px;
+      }
+
+      .info h4 {
+        margin: 0 0 5px;
+        color: #777;
+      }
+
+      .legend {
+        width: 115px;
+        padding: 6px 8px;
+        font: 14px/16px Arial, Helvetica, sans-serif;
+        background: #fff;
+        background: rgba(255, 255, 255, 0.8);
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        border-radius: 5px;
+        text-align: left;
+        line-height: 22px;
+        color: #555;
+      }
+
+      .legend i {
+        width: 18px;
+        height: 18px;
+        float: left;
+        margin-right: 8px;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <div id="map"></div>
+
+      <script>
+        var map = L.map('map', { zoomControl: false }).setView(
+          [53.08038, -1.883039],
+          6
+        )
+        var TileLayer = L.tileLayer(
+          'https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoiZGlzY29kcm9pZCIsImEiOiJjanVhdzNlcXQwNmprNDRsNG9iNmQ4dTlpIn0.bkdjNk6mySecnK6gg-3KXw',
+          {
+            maxZoom: 18,
+            attribution:
+              'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, ' +
+              '<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
+              'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+            id: 'mapbox.light',
+          }
+        )
+        var i
+        var regionMap = {}
+        for (i = 0; i < FireIncData.length; i++) {
+          var regionID = FireIncData[i].fra17cd
+          var regionData = FireIncData[i].incidents
+          var regionData2 = FireIncData[i].objectID
+          regionMap[regionID] = regionData
+        }
+        for (i = 0; i < FireData.features.length; i++) {
+          var mapfeature = FireData.features[i]
+          mapfeature.properties.incidents =
+            regionMap[mapfeature.properties.fra16cd]
+        }
+        var info = L.control()
+        info.onAdd = function(map) {
+          this._div = L.DomUtil.create('div', 'info')
+          this.update()
+          return this._div
+        }
+        info.update = function(props) {
+          this._div.innerHTML =
+            '<h4>Incidents attended Apr-Sep 2018 by English Fire Authorities</h4>' +
+            (props
+              ? '<b>' +
+                props.fra16nm +
+                '</b><br/>' +
+                props.incidents +
+                ' incidents <br/>'
+              : 'Click on region for more details <br/><br/>')
+        }
+        info.addTo(map)
+        function getColor(d) {
+          return d > 24000
+            ? '#800026'
+            : d > 12000
+            ? '#BD0026'
+            : d > 6000
+            ? '#E31A1C'
+            : d > 4000
+            ? '#FC4E2A'
+            : d > 2000
+            ? '#FD8D3C'
+            : '#FEB24C'
+        }
+        function style(feature) {
+          return {
+            fillColor: getColor(feature.properties.incidents),
+            weight: 2,
+            opacity: 1,
+            color: 'white',
+            dashArray: '3',
+            fillOpacity: 0.7,
+          }
+        }
+        function highlightFeature(e) {
+          var layer = e.target
+          layer.setStyle({
+            weight: 4,
+            color: '#fff',
+            dashArray: '',
+            fillOpacity: 0.7,
+          })
+          if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+            layer.bringToFront()
+          }
+          info.update(layer.feature.properties)
+        }
+        var geojson
+        function resetHighlight(e) {
+          geojson.resetStyle(e.target)
+          info.update()
+        }
+        function zoomToFeature(e) {
+          map.fitBounds(e.target.getBounds())
+        }
+        function onEachFeature(feature, layer) {
+          layer.on({ mouseover: highlightFeature, mouseout: resetHighlight })
+        }
+        geojson = L.geoJson(FireData, {
+          style: style,
+          onEachFeature: onEachFeature,
+        }).addTo(map)
+        var legend = L.control({ position: 'bottomright' })
+        legend.onAdd = function(map) {
+          var div = L.DomUtil.create('div', 'legend'),
+            grades = [0, 2000, 4000, 6000, 12000, 24000],
+            labels = [],
+            from,
+            to
+          for (var i = 0; i < grades.length; i++) {
+            from = grades[i]
+            to = grades[i + 1]
+            labels.push(
+              '<i style="background:' +
+                getColor(from + 1) +
+                '"></i> ' +
+                from +
+                (to ? '&ndash;' + to : '+')
+            )
+          }
+          div.innerHTML = labels.join('<br>')
+          return div
+        }
+        map.touchZoom.disable()
+        map.doubleClickZoom.disable()
+        map.scrollWheelZoom.disable()
+        map.boxZoom.disable()
+        map.keyboard.disable()
+        map.dragging.disable()
+        legend.addTo(map)
+        TileLayer.addTo(map)
+      </script>
+    </main>
+  </body>
+</html>
